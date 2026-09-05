@@ -8,21 +8,14 @@
   Кнопка "Вопросы (FAQ)" — быстрые ответы на частые вопросы
   Кнопка "Мои записи" — показать последнюю запись пользователя
   Уведомление владельцу бизнеса о новой записи (через OWNER_CHAT_ID)
-
-Как запустить:
-  1. Создать бота через @BotFather в Telegram, получить токен.
-  2. Установить библиотеку:  pip install python-telegram-bot --break-system-packages
-  3. Вписать токен в переменную BOT_TOKEN ниже (или через переменную окружения BOT_TOKEN).
-  4. Вписать свой OWNER_CHAT_ID (узнать свой chat_id можно у бота @userinfobot).
-  5. Запустить:  python bot.py
-
-Хранение данных — в памяти (для демо). Для реального использования
-подключить базу данных (SQLite/Postgres) — легко расширяется.
 """
 
 import os
 import logging
+import asyncio
+import threading
 from datetime import datetime
+from flask import Flask
 
 from telegram import (
     InlineKeyboardButton,
@@ -67,9 +60,20 @@ FAQ = {
 
 CHOOSING_SERVICE, ENTERING_DATE, ENTERING_PHONE = range(3)
 
-# Простое "хранилище" записей в памяти (для демо)
+# Хранилище записей в памяти
 bookings = {}
 
+# ------------------------- Веб-сервер Flask для Render -------------------------
+
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def home():
+    return "Bot is live and running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port)
 
 # ------------------------- Главное меню -------------------------
 
@@ -212,9 +216,16 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ------------------------- Сборка приложения -------------------------
 
 def main():
-    if BOT_TOKEN == "ВСТАВЬ_СЮДА_ТОКЕН_ОТ_BOTFATHER":
-        print("⚠️  Сначала вставь токен бота в BOT_TOKEN (или переменную окружения BOT_TOKEN).")
+    if not BOT_TOKEN or BOT_TOKEN == "ВСТАВЬ_СЮДА_ТОКЕН_ОТ_BOTFATHER":
+        print("⚠️ Сначала вставь токен бота в BOT_TOKEN.")
         return
+
+    # Запуск Flask в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
+
+    # Фикс для цикла событий asyncio в Python 3.12+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -235,8 +246,8 @@ def main():
     app.add_handler(CallbackQueryHandler(back_to_menu, pattern="^menu_back$"))
     app.add_handler(CallbackQueryHandler(faq_answer, pattern="^faq_"))
 
-    print("Бот запущен. Нажми Ctrl+C для остановки.")
-    app.run_polling()
+    print("Бот и веб-сервер запущены.")
+    app.run_polling(close_loop=False)
 
 
 if __name__ == "__main__":
